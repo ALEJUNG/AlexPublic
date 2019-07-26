@@ -1,5 +1,6 @@
 #include "stm32l4xx.h"
 #include "Buffer.h"
+#include "myPrint.h"
 
 #include <stdbool.h>
 #include <string.h>
@@ -9,7 +10,7 @@
 
 extern UART_HandleTypeDef huart2;
 
-uint8_t bprint[30] = "";
+uint8_t print[30] = "";
 uint8_t bend[] = "\r\n";
 
 bool result = false;
@@ -17,7 +18,7 @@ rb RXRingBuf;
 rb TXRingBuf;
 
 /**************************RXBuffer*****************************/
-bool RingBufferInit()
+bool RingBufferInit()		//RXBuffer initialize
 {
   RXRingBuf.head = 0;
   RXRingBuf.tail = 0;
@@ -28,13 +29,14 @@ bool RingBufferInit()
 	return result;
 }
 
-uint8_t RingBufferLength()
+uint8_t RingBufferLength()		//Unoutputed data in RXBuffer
 {
 	RXRingBuf.length = RXRingBuf.tail - RXRingBuf.head;
 	
   return RXRingBuf.length;
 }
 
+/*Check RX Buffer State*/
 //false : not full / true : full
 bool IsFull()
 {
@@ -47,15 +49,13 @@ bool IsEmpty()
     return RXRingBuf.head == RXRingBuf.tail;   
 }
 
+/*Pushed data in RXBuffer*/
 void RingBufferPush(uint8_t data)
 {
 	if(IsFull()){
-		memcpy(bprint,"Buffer is full\r\n",sizeof("Buffer is full\r\n"));
-			
-		HAL_Delay(10);
-		HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
-		
-//		printf("Buffer is full \n");
+		memcpy(print,"Buffer is full\r\n",sizeof("Buffer is full\r\n"));
+		TXRingBufferPush(print);
+		OutputBuffer(&huart2);
 		
 		return;
 	}
@@ -65,19 +65,17 @@ void RingBufferPush(uint8_t data)
 	return;
 }
 
+/*Poped data in RXBuffer*/
 char RingBufferPop()
 {
 	char re = 0;
     if (IsEmpty())
     {
-			memcpy(bprint,"Buffer is empty\r\n",sizeof("Buffer is empty\r\n"));
+			memcpy(print,"Buffer is empty\r\n",sizeof("Buffer is empty\r\n"));
+			TXRingBufferPush(print);
+			OutputBuffer(&huart2);
 			
-			HAL_Delay(10);
-			HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
-			
-//      printf("Buffer is empty \n");
-			
-        return re;
+      return re;
     }
     re = RXRingBuf.Data[RXRingBuf.head];
     RXRingBuf.head = NEXT(RXRingBuf.head);
@@ -86,6 +84,7 @@ char RingBufferPop()
 	
 	/*
     uint8_t ret = 0;
+
     if (RingBuf.length > 0) {
         if (RingBuf.tail == SERIAL_BUF_SIZE) {
             RingBuf.tail = 0;
@@ -98,22 +97,15 @@ char RingBufferPop()
 	
 }
 
+/*Print of all of data in RXBuffer*/
 void PrintBuffer(){
-	memcpy(bprint,"**********BUFFER**********\r\n",sizeof("**********BUFFER**********\r\n"));
-	
-	HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
-	HAL_Delay(10);
-	
-	HAL_UART_Transmit_IT(&huart2, RXRingBuf.Data, SERIAL_BUF_SIZE);
-	HAL_Delay(10);
-	
-	HAL_UART_Transmit_IT(&huart2, bend, 3);
-	HAL_Delay(10);
-	memcpy(bprint,"**************************\r\n",sizeof("**************************\r\n"));
-	
-	HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
-	HAL_Delay(10);
-	
+	memcpy(print,"**********BUFFER**********\r\n",sizeof("**********BUFFER**********\r\n"));
+	TXRingBufferPush(print);
+	TXRingBufferPush(RXRingBuf.Data);
+	TXRingBufferPush(bend);
+	memcpy(print,"**************************\r\n",sizeof("**************************\r\n"));
+	TXRingBufferPush(print);
+	OutputBuffer(&huart2);
 	
 /*	printf("********BUFFER**********\n");
 	for(int i = 0; i < SERIAL_BUF_SIZE; i ++){
@@ -126,7 +118,7 @@ void PrintBuffer(){
 }
 
 /**************************TXBuffer*****************************/
-bool TXRingBufferInit()
+bool TXRingBufferInit() //TXBuffer initialize
 {
   TXRingBuf.head = 0;
   TXRingBuf.tail = 0;
@@ -137,13 +129,14 @@ bool TXRingBufferInit()
 	return result;
 }
 
-uint8_t TXRingBufferLength()
+uint8_t TXRingBufferLength()		//Unoutputed data in TXBuffer
 {
 	TXRingBuf.length = TXRingBuf.tail - TXRingBuf.head;
 	
   return TXRingBuf.length;
 }
 
+/*Check TX Buffer State*/
 //false : not full / true : full
 bool TXIsFull()
 {
@@ -156,15 +149,35 @@ bool TXIsEmpty()
     return TXRingBuf.head == TXRingBuf.tail;   
 }
 
-void TXRingBufferPush(uint8_t *data,uint8_t datasize)
-{
-	uint8_t inputDATA;
+/*Pushed data in TXBuffer*/
+void TXRingBufferPush(uint8_t *data){	
+	uint8_t inputDATA = *data;
+	
+	if(TXIsFull()){
+			memcpy(print,"TX Buffer is full\r\n",sizeof("TX Buffer is full\r\n"));
+			TXRingBufferPush(print);
+			OutputBuffer(&huart2);
+		
+			return;
+		}
+	else{
+		while(inputDATA != NULL){
+			inputDATA = *data;
+			
+			TXRingBuf.Data[TXRingBuf.tail] = inputDATA;
+			TXRingBuf.tail = NEXT(TXRingBuf.tail);
+			
+			data ++;
+		}
+	}
+	
+/*	uint8_t inputDATA;
 		for(int i = 0;i < datasize; i++){
 		if(TXIsFull()){
-			memcpy(bprint,"TX Buffer is full\r\n",sizeof("TX Buffer is full\r\n"));
+			memcpy(print,"TX Buffer is full\r\n",sizeof("TX Buffer is full\r\n"));
 			
 			HAL_Delay(10);
-			HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
+			HAL_UART_Transmit_IT(&huart2, print, sizeof(print));
 		
 //		printf("Buffer is full \n");
 		
@@ -176,20 +189,20 @@ void TXRingBufferPush(uint8_t *data,uint8_t datasize)
 		TXRingBuf.Data[TXRingBuf.tail] = inputDATA;
 		TXRingBuf.tail = NEXT(TXRingBuf.tail);
 	}
+*/	
 		return;
 }
 
+/*Poped data in TXBuffer*/
 char TXRingBufferPop()
 {
 	uint8_t re = 0;
-    if (TXIsEmpty())
-    {
-			memcpy(bprint,"TX Buffer is empty\r\n",sizeof("TX Buffer is empty\r\n"));
-			HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
+    if (TXIsEmpty()){
+			memcpy(print,"TX Buffer is empty\r\n",sizeof("TX Buffer is empty\r\n"));
+			TXRingBufferPush(print);
+			OutputBuffer(&huart2);
 			
-//      printf("Buffer is empty \n");
-			
-        return re;
+      return re;
     }
     re = TXRingBuf.Data[TXRingBuf.head];
     TXRingBuf.head = NEXT(TXRingBuf.head);
@@ -198,6 +211,7 @@ char TXRingBufferPop()
 	
 	/*
     uint8_t ret = 0;
+
     if (RingBuf.length > 0) {
         if (RingBuf.tail == SERIAL_BUF_SIZE) {
             RingBuf.tail = 0;
@@ -210,23 +224,16 @@ char TXRingBufferPop()
 	
 }
 
+/*Print of all of data in TXBuffer*/
 void TXPrintBuffer(){
-	memcpy(bprint,"**********TX BUFFER**********\r\n",sizeof("**********TX BUFFER**********\r\n"));
-	
-	HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
-	HAL_Delay(10);
-	
-	HAL_UART_Transmit_IT(&huart2, TXRingBuf.Data, SERIAL_BUF_SIZE);
-	HAL_Delay(10);
-	
-	HAL_UART_Transmit_IT(&huart2, bend, 3);
-	HAL_Delay(10);
-	memcpy(bprint,"**************************\r\n",sizeof("**************************\r\n"));
-	
-	HAL_UART_Transmit_IT(&huart2, bprint, sizeof(bprint));
-	HAL_Delay(10);
-	
-	
+	memcpy(print,"**********TX BUFFER**********\r\n",sizeof("**********TX BUFFER**********\r\n"));
+	TXRingBufferPush(print);
+	TXRingBufferPush(TXRingBuf.Data);
+	TXRingBufferPush(bend);
+	memcpy(print,"**************************\r\n",sizeof("**************************\r\n"));
+	TXRingBufferPush(print);
+	OutputBuffer(&huart2);
+		
 /*	printf("********BUFFER**********\n");
 	for(int i = 0; i < SERIAL_BUF_SIZE; i ++){
 		printf("%c", RingBuf.Data[i]);
@@ -236,3 +243,6 @@ void TXPrintBuffer(){
 */	
 	return;
 }
+
+
+
