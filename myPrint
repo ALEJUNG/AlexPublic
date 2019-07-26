@@ -1,0 +1,35 @@
+/***OUTout datain MCU***/
+
+
+
+#include "stm32l4xx.h"
+#include "Buffer.h"
+#include "stm32l4xx_hal.h"
+
+#include <string.h>
+
+#define DataSize 100
+
+/*Receive data from TXBuffer and output*/
+void OutputBuffer(UART_HandleTypeDef *huart){
+	uint8_t TXData[DataSize] = {'\0',};
+	uint8_t ClearData[DataSize] = "\0";
+	int j= 0;
+	
+	while(TXIsEmpty() == false){	//Receive all of data in TXBuffer
+		TXData[j] = TXRingBufferPop();	
+		j++;
+			if(j == DataSize){	//If data is full of DataSize
+				HAL_UART_Transmit_IT(huart, TXData, sizeof(TXData));	//Output data
+				HAL_Delay(10);		//Waiting end of output
+				/*Initialize*/
+				j = 0;		
+				memcpy(TXData,ClearData,DataSize);
+			}
+	}
+	
+	HAL_UART_Transmit_IT(huart, TXData, sizeof(TXData));	//Output data
+	HAL_Delay(10);		//Waiting end of output
+	
+	return;
+}
